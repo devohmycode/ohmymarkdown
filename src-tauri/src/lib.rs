@@ -121,13 +121,73 @@ fn export_html_to_temp(html_content: &str) -> Result<String, String> {
     Ok(path.to_string_lossy().to_string())
 }
 
+#[tauri::command]
+fn convert_pdf_to_markdown(file_path: &str) -> Result<String, String> {
+    let bytes = std::fs::read(file_path)
+        .map_err(|e| format!("Impossible de lire le fichier: {}", e))?;
+
+    let text = pdf_extract::extract_text_from_mem(&bytes)
+        .map_err(|e| format!("Erreur d'extraction du texte PDF: {}", e))?;
+
+    // Collect non-empty lines into blocks separated by blank lines
+    let lines: Vec<&str> = text.lines().collect();
+    let mut blocks: Vec<Vec<&str>> = Vec::new();
+    let mut current_block: Vec<&str> = Vec::new();
+
+    for line in &lines {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            if !current_block.is_empty() {
+                blocks.push(current_block.clone());
+                current_block.clear();
+            }
+        } else {
+            current_block.push(trimmed);
+        }
+    }
+    if !current_block.is_empty() {
+        blocks.push(current_block);
+    }
+
+    // Convert blocks to markdown with heuristic heading detection
+    let mut result = String::new();
+    for block in &blocks {
+        let text = block.join(" ");
+        if text.is_empty() {
+            continue;
+        }
+
+        let is_short = text.len() < 80;
+        let no_ending_punct = !text.ends_with('.') && !text.ends_with(',')
+            && !text.ends_with(';') && !text.ends_with(':')
+            && !text.ends_with('!') && !text.ends_with('?');
+        let is_single_block = block.len() <= 2;
+
+        if is_short && no_ending_punct && is_single_block {
+            // Likely a heading
+            if !result.is_empty() {
+                result.push_str("\n\n");
+            }
+            result.push_str("## ");
+            result.push_str(&text);
+        } else {
+            if !result.is_empty() {
+                result.push_str("\n\n");
+            }
+            result.push_str(&text);
+        }
+    }
+
+    Ok(result)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .invoke_handler(tauri::generate_handler![convert_word_to_markdown, convert_to_markdown_via_pandoc, export_markdown_via_pandoc, export_html_to_temp, check_wkhtmltopdf_installed, install_wkhtmltopdf_winget])
+        .invoke_handler(tauri::generate_handler![convert_word_to_markdown, convert_to_markdown_via_pandoc, export_markdown_via_pandoc, export_html_to_temp, check_wkhtmltopdf_installed, install_wkhtmltopdf_winget, convert_pdf_to_markdown])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

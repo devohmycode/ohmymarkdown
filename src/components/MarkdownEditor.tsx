@@ -330,6 +330,28 @@ export function MarkdownEditor() {
     }
   }
 
+  async function handleImportPdf() {
+    setOpenMenu(null);
+    const selected = await open({
+      multiple: false,
+      filters: [
+        { name: "PDF", extensions: ["pdf"] },
+      ],
+    });
+
+    if (selected) {
+      try {
+        const content = await invoke<string>("convert_pdf_to_markdown", {
+          filePath: selected,
+        });
+        setMarkdownWithHistory(content);
+        setCurrentFile(null);
+      } catch (error) {
+        alert(error);
+      }
+    }
+  }
+
   async function handleImportPandoc(filterName: string, extensions: string[], fromFormat: string) {
     setOpenMenu(null);
     const selected = await open({
@@ -356,14 +378,64 @@ export function MarkdownEditor() {
   function handleExportPdf() {
     setOpenMenu(null);
 
-    const container = document.createElement("div");
-    container.className = "print-container";
-    container.innerHTML = htmlContent;
-    document.body.appendChild(container);
+    const iframe = document.createElement("iframe");
+    iframe.style.position = "fixed";
+    iframe.style.left = "-9999px";
+    iframe.style.width = "0";
+    iframe.style.height = "0";
+    iframe.style.border = "none";
+    document.body.appendChild(iframe);
 
-    window.print();
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!doc) {
+      document.body.removeChild(iframe);
+      return;
+    }
 
-    document.body.removeChild(container);
+    doc.open();
+    doc.write(`<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Export PDF</title>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 12pt;
+    line-height: 1.6;
+    color: #000;
+    background: #fff;
+    margin: 0;
+    padding: 20px 40px;
+  }
+  h1 { font-size: 2em; border-bottom: 1px solid #ccc; padding-bottom: 0.3em; margin-top: 0; }
+  h2 { font-size: 1.5em; border-bottom: 1px solid #ddd; padding-bottom: 0.3em; margin-top: 24px; }
+  h3 { font-size: 1.25em; margin-top: 24px; }
+  h4, h5, h6 { margin-top: 24px; }
+  p { margin: 0 0 12px; }
+  a { color: #0366d6; }
+  strong { font-weight: 600; }
+  code { background: #f4f4f4; padding: 2px 5px; border-radius: 3px; font-family: Consolas, 'Courier New', monospace; font-size: 0.9em; }
+  pre { background: #f6f8fa; border: 1px solid #ddd; border-radius: 4px; padding: 12px; overflow-x: auto; margin: 12px 0; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid #0366d6; margin: 12px 0; padding: 8px 16px; background: #f6f8fa; color: #444; }
+  blockquote p { margin: 0; }
+  ul, ol { padding-left: 24px; margin: 12px 0; }
+  li { margin: 4px 0; }
+  hr { border: none; border-top: 1px solid #ccc; margin: 24px 0; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+  th, td { border: 1px solid #ccc; padding: 8px 12px; text-align: left; }
+  th { background: #f4f4f4; font-weight: 600; }
+  img { max-width: 100%; height: auto; }
+</style>
+</head><body>${htmlContent}</body></html>`);
+    doc.close();
+
+    iframe.onload = () => {
+      setTimeout(() => {
+        iframe.contentWindow?.print();
+        setTimeout(() => {
+          document.body.removeChild(iframe);
+        }, 1000);
+      }, 100);
+    };
   }
 
   async function handleExportPandoc(filterName: string, extension: string, toFormat: string) {
@@ -1016,6 +1088,9 @@ export function MarkdownEditor() {
                     <div className="submenu-dropdown">
                       <button className="menu-item" onClick={handleImportWord}>
                         <span className="menu-item-label">Word (.docx)</span>
+                      </button>
+                      <button className="menu-item" onClick={handleImportPdf}>
+                        <span className="menu-item-label">PDF (.pdf)</span>
                       </button>
                       <button className="menu-item" onClick={() => handleImportPandoc("HTML", ["html", "htm"], "html")}>
                         <span className="menu-item-label">HTML (.html)</span>
